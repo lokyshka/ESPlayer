@@ -8,29 +8,37 @@
 #define null 0
 #define longPress 3000
 
-bool btnValue[7];
-uint8_t btnData[3];
-
+bool btnValue[6];   // необработанные данные, есть сигнал со всех кнопок, не учитывая дребезг
+uint8_t btnData[3]; // обработанные данные, какая кнопка(1/2 кнопки) нажаты
 
 void setup() {
-    // Пины со встроенной подтяжкой (резисторы не нужны)
+    // пины со встроенной подтяжкой (резисторы не нужны)
     pinMode(pause, INPUT_PULLUP);
     pinMode(go, INPUT_PULLUP);
 
-    // Пины БЕЗ встроенной подтяжки (нужны внешние резисторы 10кОм к 3.3V)
+    // пины БЕЗ встроенной подтяжки (нужны внешние резисторы 10кОм к 3.3V)
     pinMode(volup, INPUT); 
     pinMode(voldown, INPUT);
     pinMode(back, INPUT); // VP
     pinMode(next, INPUT); // VN
 }
 
-void actionBtn(uint8_t btn, uint8_t btn2, bool isLong) {
+void actPlayerBtn(uint8_t btn, uint8_t btn2, bool isLong) {
     if (btn == pause && btn2 == null) { /* play / pause */}
     else if (btn == go && btn2 == null && !isLong) { /* next frame */ }
     else if (btn == back && btn2 == null && !isLong) { /* back */ }
     else if (btn == next && btn2 == null && !isLong) { /* next */ }
-    else if (btn == volup && btn2 == null && !isLong) { /* volume up */ }
     else if (btn == voldown && btn2 == null && !isLong) { /* volume down */ }
+    else if (btn == volup && btn2 == null && !isLong) { /* volume up */ }
+    else if (btn == go && btn2 == null && isLong) { /* light sleep */ }
+    else if (((btn == go && btn2 == pause) || (btn == pause && btn2 == go)) && isLong) { /* deep sleep */ }
+}
+
+void actSettBtn(uint8_t btn, uint8_t btn2, bool isLong) {
+    if (btn == pause && btn2 == null) { /* click */}
+    else if (btn == go && btn2 == null && !isLong) { /* next frame */ }
+    else if ((btn == back && btn2 == null && !isLong) || (btn == voldown && btn2 == null && !isLong)) { /* down */ }
+    else if ((btn == next && btn2 == null && !isLong) || (btn == volup && btn2 == null && !isLong)) { /* up */ }
     else if (btn == go && btn2 == null && isLong) { /* light sleep */ }
     else if (((btn == go && btn2 == pause) || (btn == pause && btn2 == go)) && isLong) { /* deep sleep */ }
 }
@@ -44,19 +52,18 @@ void btnRead() {
     bool butVoldown = !digitalRead(voldown);
     bool butAll = (butPause || butBack || butNext || butVolup || butVoldown || butGo);
 
-    btnValue[0] = butAll;
-    btnValue[1] = butPause;
-    btnValue[2] = butGo;
-    btnValue[3] = butBack;
-    btnValue[4] = butNext;
-    btnValue[5] = butVolup;
-    btnValue[6] = butVoldown;
+    btnValue[0] = butPause;
+    btnValue[1] = butGo;
+    btnValue[2] = butBack;
+    btnValue[3] = butNext;
+    btnValue[4] = butVolup;
+    btnValue[5] = butVoldown;
 }
 
 void btnDecode() {
     uint8_t btn = null;
     uint8_t btn2 = null;
-    for (uint8_t i = 1; i < 8; i++) {
+    for (uint8_t i = 0; i < 7; i++) {
         if (btnValue[i]) {
             if (btn == 0) {
                 switch(i) {
@@ -86,7 +93,7 @@ void btnDecode() {
 
 void btnGet() {
     btnRead();
-    uint8_t btnSum = (btnValue[1] + btnValue[2] + btnValue[3] + btnValue[4] + btnValue[5] + btnValue[6]);
+    uint8_t btnSum = (btnValue[0] + btnValue[1] + btnValue[2] + btnValue[3] + btnValue[4] + btnValue[5]);
     if ((btnSum == 0) || ((btnSum != 1) && (btnSum != 2))) {
         btnData[0] = 0;
         btnData[1] = 0;
@@ -109,7 +116,7 @@ void btnGet() {
         btnRead();
 
         // eсли нажато 2 кнопки, проверяем, чтобы хотя бы одна осталась
-        btnNewSum = (btnValue[1] + btnValue[2] + btnValue[3] + btnValue[4] + btnValue[5] + btnValue[6]);
+        btnNewSum = (btnValue[0] + btnValue[1] + btnValue[2] + btnValue[3] + btnValue[4] + btnValue[5]);
 
         if (btnNewSum == btnSum) { lastSeenTime = millis(); }
         else if ((btnNewSum == 0) && (millis() - lastSeenTime > 50)) {
