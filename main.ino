@@ -1,15 +1,28 @@
+// #include <esp_sleep.h>
+
 #define pause 32
 #define go 33
 #define back 34
 #define next 35
 #define volup 36
 #define voldown 39
+  //
+#define battery null
+#define charging null
 
 #define null 0
 #define longPress 3000
+  //
+#define startScr 0
+#define playScr 1
+#define settScr 2
 
 bool btnValue[6];   // необработанные данные, есть сигнал со всех кнопок, не учитывая дребезг
-uint8_t btnData[3]; // обработанные данные, какая кнопка(1/2 кнопки) нажаты
+volatile uint8_t btnData[3]; // обработанные данные, какая кнопка(1/2 кнопки) нажаты
+volatile uint8_t charge;
+volatile float voltage;
+volatile uint8_t currDisp = 0;
+volatile bool isCharging;
 
 void setup() {
     // пины со встроенной подтяжкой (резисторы не нужны)
@@ -21,6 +34,64 @@ void setup() {
     pinMode(voldown, INPUT);
     pinMode(back, INPUT); // VP
     pinMode(next, INPUT); // VN
+
+    pinMode(battery, INPUT);
+    pinMode(charging, INPUT);
+
+      //
+
+    firstBattGet();
+    if (charge < 2) {  }
+}
+    
+    /////////////////////////
+
+void checkCharging() {
+    uint32_t rawSum = 0;
+    for (uint8_t i = 0; i < 5; i++) {
+        rawSum = rawSum + analogRead(charging);
+        delay(5);
+    }
+    if (rawSum / 5 > 1000) { isCharging = true; }
+    else { isCharging = false; firstBattGet(); }
+
+    delay(2000);
+}
+
+void firstBattGet() {
+    float voltgSum = 0;
+    for (uint8_t i = 0; i < 20; i++) {
+        int raw = analogRead(battery);
+        voltgSum = voltgSum + (raw / 4095.0) * 3.3 * 2.0 * 1.1;
+        delay(10);
+    }
+    voltage = voltgSum / 20;
+    
+    if (voltage >= 4.2) { charge = 100; }
+    else if (voltage <= 3.3) { charge = 0; }
+    else { charge = (voltage - 3.3) / (4.2 - 3.3) * 100; }
+}
+
+void battGet() {
+    float voltgSum = 0;
+    uint8_t chrgtmp;
+    for (uint8_t i = 0; i < 10; i++) {
+        int raw = analogRead(battery);
+        voltgSum = voltgSum + (raw / 4095.0) * 3.3 * 2.0 * 1.1;
+        delay(5);
+    }
+    voltage = voltgSum / 10;
+    
+    if (voltage >= 4.2) { chrgtmp = 100; }
+    else if (voltage <= 3.3) { chrgtmp = 0; }
+    else { chrgtmp = (voltage - 3.3) / (4.2 - 3.3) * 100; }
+
+    float smothChrg = (charge * 0.9) + (chrgtmp * 0.1);
+    uint8_t newchrg = (uint8_t)smothChrg;
+
+    if ((isCharging && charge < newchrg) || (!isCharging && charge > newchrg)) { charge = newchrg; }
+    
+    delay(20000);
 }
 
 void actPlayerBtn(uint8_t btn, uint8_t btn2, bool isLong) {
