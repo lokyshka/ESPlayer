@@ -16,28 +16,30 @@
 #define null 0
 #define longPress 3000
   //
-#define startScr 0
-#define playScr 1
-#define settScr 2
-#define errScr 3
+#define startScr 1
+#define playScr 2
+#define settScr 3
+#define errScr 4
+  //
+#define errMountSD 1
+#define errOpenCSV 2
 
 bool btnValue[6];   // необработанные данные, есть сигнал со всех кнопок, не учитывая дребезг
-volatile uint8_t btnData[3]; // обработанные данные, какая кнопка(1/2 кнопки) нажаты
+volatile uint8_t btnData[3]; // обработанные данные, какая кнопки(1-ая и 2-ая кнопки) нажаты
+
 volatile uint8_t charge;
 volatile float voltage;
-volatile uint8_t currDisp = 0;
 volatile bool isCharging;
-volatile bool isSD;
 
-bool isbPause = false;
-bool isbGo = false;
-bool isbBack = false;
-bool isbNext = false;
-bool isbVolup = false;
-bool isbVoldown = false;
+volatile uint8_t currDisp = null;
+volatile uint8_t errNum = null;
 
-File root;
-File musicFile;
+EXT_RAM_ATTR String songfile;
+EXT_RAM_ATTR String songname;
+EXT_RAM_ATTR String songartist;
+EXT_RAM_ATTR uint16_t songdur;
+bool songDel;
+EXT_RAM_ATTR uint16_t unlisten[];
 
 void setup() {
     // пины со встроенной подтяжкой (резисторы не нужны)
@@ -57,29 +59,39 @@ void setup() {
 
     esp_sleep_enable_ext0_wakeup((gpio_num_t)go, 0);
 
-      //
-
     firstBattGet();
     checkCharging();
     if (charge < 2 && !isCharging) { esp_deep_sleep_start(); }
-    
     currDisp = startScr;
 
     uint8_t cardType = SD_MMC.cardType();
     if ((cardType == CARD_NONE) || (!SD_MMC.begin("/sdcard", true))) { 
-        isSD = false; 
+        errNum = errMountSD;
+        currDisp = errScr;
+        delay(3000);
+        offesp();
+    }
+
+      //
+
+    File songs;
+    songs = SD_MMC.open("/songs.csv");
+    if (!songs) {
+        errNum = errOpenCSV;
         currDisp = errScr;
         errDisp();
-        delay(3000);
-        esp_deep_sleep_start();
+        while (btnData[0] != back || btnData[0] != next) { delay(50); }
+        if (btnData[0] == back) { offesp(); }
     }
-    else { isSD = true; }
-
-
+    songs.close();
 }
     
     /////////////////////////
 
+void offesp() {
+    SD_MMC.end();
+    esp_deep_sleep_start();
+}
 void checkCharging() {
     uint32_t rawSum = 0;
     for (uint8_t i = 0; i < 5; i++) {
@@ -255,8 +267,63 @@ void btnGet() {
     btnData[2] = isLong;
 }
 
+String getValCSV(String data, uint16_t index) {
+  int found = 0;
+  int strIndex[] = {0, -1};
+  int maxIndex = data.length() - 1;
+
+  for (int i = 0; ((i <= maxIndex) && (found <= index)); i++) {
+    if (data.charAt(i) == ';' || i == maxIndex) {
+      found++;
+      strIndex[0] = strIndex[1] + 1;
+      strIndex[1] = (i == maxIndex) ? i + 1 : i;
+    }
+  }
+  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+void getSongData(uint16_t needln) {
+    File songs;
+    songs = SD_MMC.open("/songs.csv");
+    if (!songs) {
+        errNum = errOpenCSV;
+        currDisp = errScr;
+        while (btnData[0] != back && btnData[0] != next) { delay(50); }
+        if (btnData[0] == back) { offesp(); }
+    }
+
+    char buf[175];
+    uint16_t currln = 0;
+    uint8_t len;
+    uint8_t col;
+    while(songs.available()) {
+        int len = songs.readBytesUntil('\n', buf, sizeof(buf) - 1);
+        buf[len] = '\0';
+
+        if (currln == needln) {
+            col = 0;
+            char* part = strtok(buf, ";");
+
+            while (part != NULL) {
+                switch (col) {
+                    case 0: { songfile = String(part);        break; }
+                    case 1: { songname = String(part);        break; }
+                    case 2: { songartist = String(part);      break; }
+                    case 3: { songdur = (uint16_t)atoi(part); break; }
+                    case 4: { songDel = atoi(part);           break; }
+                }
+                part = strtok(NULL, ";");
+                col++;
+            }
+            break;
+        }
+        currln++;
+    }
+    songs.close();
+}
+
 void errDisp() {
-    if (!isSD) {
+    if (errNum == errMountSD) {
         // Error! SD cant be mounted or SD is missing.
     }
 }
