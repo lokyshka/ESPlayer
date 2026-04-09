@@ -1,11 +1,14 @@
-// #include <esp_sleep.h>
+#include <Arduino.h>
+#include <esp_sleep.h>
+#include <SD_MMC.h>
+#include <FS.h>
 
-#define pause 32
-#define go 33
-#define back 34
-#define next 35
-#define volup 36
-#define voldown 39
+#define pause 34
+#define go 35
+#define back 32 // pullup
+#define next 33 // pullup
+#define voldown 36
+#define volup 39
   //
 #define battery null
 #define charging null
@@ -16,6 +19,7 @@
 #define startScr 0
 #define playScr 1
 #define settScr 2
+#define errScr 3
 
 bool btnValue[6];   // необработанные данные, есть сигнал со всех кнопок, не учитывая дребезг
 volatile uint8_t btnData[3]; // обработанные данные, какая кнопка(1/2 кнопки) нажаты
@@ -23,25 +27,55 @@ volatile uint8_t charge;
 volatile float voltage;
 volatile uint8_t currDisp = 0;
 volatile bool isCharging;
+volatile bool isSD;
+
+bool isbPause = false;
+bool isbGo = false;
+bool isbBack = false;
+bool isbNext = false;
+bool isbVolup = false;
+bool isbVoldown = false;
+
+File root;
+File musicFile;
 
 void setup() {
     // пины со встроенной подтяжкой (резисторы не нужны)
-    pinMode(pause, INPUT_PULLUP);
-    pinMode(go, INPUT_PULLUP);
+    pinMode(back, INPUT_PULLUP);
+    pinMode(next, INPUT_PULLUP);
 
     // пины БЕЗ встроенной подтяжки (нужны внешние резисторы 10кОм к 3.3V)
-    pinMode(volup, INPUT); 
-    pinMode(voldown, INPUT);
-    pinMode(back, INPUT); // VP
-    pinMode(next, INPUT); // VN
+    pinMode(pause, INPUT); 
+    pinMode(go, INPUT);
+    pinMode(voldown, INPUT); // VP
+    pinMode(volup, INPUT);   // VN
 
     pinMode(battery, INPUT);
     pinMode(charging, INPUT);
 
       //
 
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)go, 0);
+
+      //
+
     firstBattGet();
-    if (charge < 2) {  }
+    checkCharging();
+    if (charge < 2 && !isCharging) { esp_deep_sleep_start(); }
+    
+    currDisp = startScr;
+
+    uint8_t cardType = SD_MMC.cardType();
+    if ((cardType == CARD_NONE) || (!SD_MMC.begin("/sdcard", true))) { 
+        isSD = false; 
+        currDisp = errScr;
+        errDisp();
+        delay(3000);
+        esp_deep_sleep_start();
+    }
+    else { isSD = true; }
+
+
 }
     
     /////////////////////////
@@ -70,6 +104,7 @@ void firstBattGet() {
     if (voltage >= 4.2) { charge = 100; }
     else if (voltage <= 3.3) { charge = 0; }
     else { charge = (voltage - 3.3) / (4.2 - 3.3) * 100; }
+
 }
 
 void battGet() {
@@ -134,26 +169,26 @@ void btnRead() {
 void btnDecode() {
     uint8_t btn = null;
     uint8_t btn2 = null;
-    for (uint8_t i = 0; i < 7; i++) {
+    for (uint8_t i = 0; i < 6; i++) {
         if (btnValue[i]) {
             if (btn == 0) {
                 switch(i) {
-                    case 1: btn = pause; break;
-                    case 2: btn = go; break;
-                    case 3: btn = back; break;
-                    case 4: btn = next; break;
-                    case 5: btn = volup; break;
-                    case 6: btn = voldown; break;
+                    case 0: btn = pause; break;
+                    case 1: btn = go; break;
+                    case 2: btn = back; break;
+                    case 3: btn = next; break;
+                    case 4: btn = volup; break;
+                    case 5: btn = voldown; break;
                 }
             }
             else {
                 switch(i) {
-                    case 1: btn2 = pause; break;
-                    case 2: btn2 = go; break;
-                    case 3: btn2 = back; break;
-                    case 4: btn2 = next; break;
-                    case 5: btn2 = volup; break;
-                    case 6: btn2 = voldown; break;
+                    case 0: btn2 = pause; break;
+                    case 1: btn2 = go; break;
+                    case 2: btn2 = back; break;
+                    case 3: btn2 = next; break;
+                    case 4: btn2 = volup; break;
+                    case 5: btn2 = voldown; break;
                 }
             }
         }
@@ -218,6 +253,12 @@ void btnGet() {
     btnData[0] = btn;
     btnData[1] = btn2;
     btnData[2] = isLong;
+}
+
+void errDisp() {
+    if (!isSD) {
+        // Error! SD cant be mounted or SD is missing.
+    }
 }
 
 void loop() {
